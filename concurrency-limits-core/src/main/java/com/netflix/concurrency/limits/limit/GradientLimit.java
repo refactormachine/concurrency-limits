@@ -251,35 +251,40 @@ public final class GradientLimit implements Limit {
         // allow it to be reduced by more than half to avoid aggressive load-sheding due to 
         // outliers.
         final double gradient = Math.max(0.5, Math.min(1.0, rttTolerance * rttNoLoad / rtt));
-        
+
+        if (sample.getMaxInFlight() < estimatedLimit / 2) {
+            return;
+        }
+        // Normal update to the limit
+
+        estimatedLimit = calcNewLimit(sample, rtt, queueSize, rttNoLoad, gradient);
+    }
+
+    private double calcNewLimit(SampleWindow sample, long rtt, double queueSize, long rttNoLoad, double gradient) {
         double newLimit;
         // Reduce the limit aggressively if there was a drop
         if (sample.didDrop()) {
             newLimit = estimatedLimit/2;
         // Don't grow the limit if we are app limited
-        } else if (sample.getMaxInFlight() < estimatedLimit / 2) {
-            return;
-        // Normal update to the limit
         } else {
             newLimit = estimatedLimit * gradient + queueSize;
         }
-        
+
         if (newLimit < estimatedLimit) {
             newLimit = Math.max(minLimit, estimatedLimit * (1-smoothing) + smoothing*(newLimit));
         }
         newLimit = Math.max(queueSize, Math.min(maxLimit, newLimit));
-        
+
         if ((int)newLimit != (int)estimatedLimit  && LOG.isDebugEnabled()) {
-            LOG.debug("New limit={} minRtt={} ms winRtt={} ms queueSize={} gradient={} resetCounter={}", 
-                    (int)newLimit, 
-                    TimeUnit.NANOSECONDS.toMicros(rttNoLoad)/1000.0, 
+            LOG.debug("New limit={} minRtt={} ms winRtt={} ms queueSize={} gradient={} resetCounter={}",
+                    (int)newLimit,
+                    TimeUnit.NANOSECONDS.toMicros(rttNoLoad)/1000.0,
                     TimeUnit.NANOSECONDS.toMicros(rtt)/1000.0,
                     queueSize,
                     gradient,
                     resetRttCounter);
         }
-
-        estimatedLimit = newLimit;
+        return newLimit;
     }
 
     @Override
